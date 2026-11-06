@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+
+# Generated artifacts
+models/**/*.pt
+models/**/*.joblib
+data/raw/*.jsonl
+data/raw/*.log
+reports/*_test_predictions.jsonl
+reports/*_metrics.json
+reports/*_report.md
+*.egg-info/
