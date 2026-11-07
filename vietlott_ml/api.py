@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -131,13 +130,6 @@ def latest(lottery: str) -> dict:
     return _latest_draw(lottery)
 
 
-@lru_cache(maxsize=32)
-def _cached_prediction(lottery: str, model: str, seed: int | None) -> str:
-    return json.dumps(
-        generate_numbers(lottery, model, seed=seed), ensure_ascii=False
-    )
-
-
 @app.post("/api/predict")
 def predict(payload: PredictRequest) -> dict:
     try:
@@ -150,9 +142,7 @@ def predict(payload: PredictRequest) -> dict:
             detail=f"Mô hình không hợp lệ. Chọn: {', '.join(MODEL_NAMES + ['random'])}",
         )
     try:
-        return json.loads(
-            _cached_prediction(payload.lottery, payload.model, payload.seed)
-        )
+        return json.loads(generate_numbers(payload.lottery, payload.model, seed=payload.seed))
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:

@@ -10,8 +10,9 @@ from .logistic_model import LogisticModel
 from .lstm_model import LSTMModel
 from .markov_model import MarkovModel
 from .mlp_model import MLPModel
+from .xgboost_model import XGBoostModel
 
-MODEL_NAMES = ["lstm", "bilstm", "logistic", "random_forest", "markov", "mlp"]
+MODEL_NAMES = ["lstm", "bilstm", "logistic", "random_forest", "markov", "mlp", "xgboost"]
 
 DISPLAY_NAMES = {
     "lstm": "LSTM",
@@ -20,11 +21,12 @@ DISPLAY_NAMES = {
     "random_forest": "Random Forest",
     "markov": "Markov",
     "mlp": "MLP",
+    "xgboost": "XGBoost",
     "random": "Random baseline",
 }
 
 SEQUENCE_MODELS = {"lstm", "bilstm"}
-TABULAR_MODELS = {"logistic", "random_forest"}
+TABULAR_MODELS = {"logistic", "random_forest", "xgboost"}
 TORCH_MODELS = {"lstm", "bilstm", "mlp"}
 
 
@@ -41,6 +43,8 @@ def build_model(name: str, n_features: int, seed: int = 42):
         return MarkovModel(n_features=n_features, seed=seed)
     if name == "mlp":
         return MLPModel(n_features=n_features, seed=seed)
+    if name == "xgboost":
+        return XGBoostModel(n_features=n_features, seed=seed)
     raise ValueError(f"Mô hình không hỗ trợ: {name}")
 
 
@@ -73,4 +77,6 @@ def load_model(lottery: str, name: str):
         return ForestModel.load(path)
     if name == "markov":
         return MarkovModel.load(path)
+    if name == "xgboost":
+        return XGBoostModel.load(path)
     raise ValueError(f"Mô hình không hỗ trợ: {name}")

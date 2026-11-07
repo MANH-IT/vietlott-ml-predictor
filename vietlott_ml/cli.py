@@ -47,14 +47,23 @@ def cmd_bootstrap(args: argparse.Namespace) -> None:
 def cmd_collect(args: argparse.Namespace) -> None:
     configure_logging()
     selected = _lotteries(args.lottery)
-    while True:
+    running = True
+    while running:
         try:
             collect_live(selected)
+        except KeyboardInterrupt:
+            LOGGER.info("Người dùng dừng thu thập")
+            running = False
         except Exception as exc:  # pragma: no cover - phụ thuộc mạng
             LOGGER.error("Thu thập thất bại: %s", exc)
         if not args.watch:
-            break
-        time.sleep(args.interval)
+            running = False
+        else:
+            try:
+                time.sleep(args.interval)
+            except KeyboardInterrupt:
+                LOGGER.info("Người dùng dừng thu thập")
+                running = False
 
 
 def cmd_validate(args: argparse.Namespace) -> None:

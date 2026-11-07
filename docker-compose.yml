@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  vietlott:
+    build: .
+    # Nếu muốn dùng GPU của host, uncomment dòng bên dưới và đưa GPU drivers vào host
+    # runtime: nvidia
+    ports:
+      - "8000:8000"
+    volumes:
+      # Tùy chọn: đồng bộ thư mục data/models/reports giữa host và container
+      - ./data:/app/data:cached
+      - ./models:/app/models:cached
+      - ./reports:/app/reports:cached
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
