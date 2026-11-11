@@ -8,6 +8,7 @@ venv/
 # Generated artifacts
 models/**/*.pt
 models/**/*.joblib
+models/**/hyperparams.json
 data/raw/*.jsonl
 data/raw/*.log
 reports/*_test_predictions.jsonl

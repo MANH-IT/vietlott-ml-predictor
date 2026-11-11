@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..config import model_dir
+from ..hyperparams import arch_params, resolve_params
 from .forest_model import ForestModel
 from .logistic_model import LogisticModel
 from .lstm_model import LSTMModel
@@ -30,21 +31,30 @@ TABULAR_MODELS = {"logistic", "random_forest", "xgboost"}
 TORCH_MODELS = {"lstm", "bilstm", "mlp"}
 
 
-def build_model(name: str, n_features: int, seed: int = 42):
+def build_model(
+    name: str,
+    n_features: int,
+    seed: int = 42,
+    params: dict | None = None,
+    lottery: str | None = None,
+):
+    """Tạo model. ``params`` mặc định lấy từ DEFAULT_PARAMS + kết quả tune."""
+    resolved = resolve_params(name, lottery) if params is None else dict(params)
+    kwargs = arch_params(name, resolved)
     if name == "lstm":
-        return LSTMModel(n_features=n_features, seed=seed)
+        return LSTMModel(n_features=n_features, seed=seed, **kwargs)
     if name == "bilstm":
-        return LSTMModel(n_features=n_features, bidirectional=True, seed=seed)
+        return LSTMModel(n_features=n_features, seed=seed, **kwargs)
     if name == "logistic":
-        return LogisticModel(n_features=n_features, seed=seed)
+        return LogisticModel(n_features=n_features, seed=seed, **kwargs)
     if name == "random_forest":
-        return ForestModel(n_features=n_features, seed=seed)
+        return ForestModel(n_features=n_features, seed=seed, **kwargs)
     if name == "markov":
-        return MarkovModel(n_features=n_features, seed=seed)
+        return MarkovModel(n_features=n_features, seed=seed, **kwargs)
     if name == "mlp":
-        return MLPModel(n_features=n_features, seed=seed)
+        return MLPModel(n_features=n_features, seed=seed, **kwargs)
     if name == "xgboost":
-        return XGBoostModel(n_features=n_features, seed=seed)
+        return XGBoostModel(n_features=n_features, seed=seed, **kwargs)
     raise ValueError(f"Mô hình không hỗ trợ: {name}")
 
 

@@ -13,6 +13,7 @@ from .data_validation import validate_file
 from .models import MODEL_NAMES
 from .predict import generate_numbers
 from .training import evaluate_saved_lottery, train_lottery
+from .tuning import tune_lottery
 
 LOGGER = logging.getLogger("vietlott.cli")
 
@@ -98,6 +99,17 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
         evaluate_saved_lottery(lottery, model_names=models, verbose=True)
 
 
+def cmd_tune(args: argparse.Namespace) -> None:
+    models = _models(args.models)
+    for lottery in _lotteries(args.lottery):
+        tune_lottery(
+            lottery,
+            model_names=models,
+            val_ratio=args.val_ratio,
+            verbose=True,
+        )
+
+
 def cmd_predict(args: argparse.Namespace) -> None:
     import json
 
@@ -156,6 +168,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lottery", default="all")
     p.add_argument("--models", default=None)
     p.set_defaults(func=cmd_evaluate)
+
+    p = sub.add_parser("tune", help="Tìm hyperparameters trên validation")
+    p.add_argument("--lottery", default="all")
+    p.add_argument("--models", default=None)
+    p.add_argument("--val-ratio", type=float, default=0.2)
+    p.set_defaults(func=cmd_tune)
 
     p = sub.add_parser("predict", help="Tạo bộ số gợi ý")
     p.add_argument("--lottery", required=True, choices=list(LOTTERIES))

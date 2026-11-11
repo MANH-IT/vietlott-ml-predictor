@@ -23,6 +23,8 @@ Vietlott_VN/
 │   ├── data_validation.py    # validate & normalize
 │   ├── dataset.py            # multi-hot, cửa sổ trượt, feature engineering
 │   ├── metrics.py            # hit rate, lift, kiểm định thống kê
+│   ├── hyperparams.py        # defaults, search space, lưu tham số đã tune
+│   ├── tuning.py             # grid search trên validation (không dùng test)
 │   ├── training.py           # train/evaluate/report
 │   ├── predict.py            # sinh bộ số gợi ý
 │   ├── api.py                # FastAPI web demo
@@ -70,6 +72,10 @@ python -m vietlott_ml.cli validate --lottery all
 # 5. Huấn luyện + đánh giá tất cả mô hình
 python -m vietlott_ml.cli train --lottery all
 
+# 5b. (Tuỳ chọn) Tìm hyperparameters trên validation rồi train lại
+python -m vietlott_ml.cli tune --lottery all
+python -m vietlott_ml.cli train --lottery all
+
 # 6. Tạo bộ số gợi ý
 python -m vietlott_ml.cli predict --lottery power655 --model lstm
 python -m vietlott_ml.cli predict --lottery mega645 --model markov
@@ -90,6 +96,16 @@ Chỉ train một vài mô hình:
 ```bash
 python -m vietlott_ml.cli train --lottery mega645 --models lstm,markov,logistic
 ```
+
+Tuning hyperparameters (chỉ dùng phần train, chia fit/validation nội bộ; không chạm test):
+
+```bash
+python -m vietlott_ml.cli tune --lottery all
+python -m vietlott_ml.cli tune --lottery power655 --models lstm,mlp --val-ratio 0.2
+```
+
+Kết quả lưu ở `models/<lottery>/hyperparams.json` (đã git-ignore) và tự động được
+`train` áp dụng. Tune một phần (`--models`) sẽ giữ nguyên kết quả của các mô hình khác.
 
 ## Thu thập dữ liệu định kỳ
 

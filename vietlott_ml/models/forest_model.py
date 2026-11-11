@@ -18,12 +18,14 @@ class ForestModel:
         n_estimators: int = 100,
         max_depth: int | None = 12,
         min_samples_leaf: int = 10,
+        n_jobs: int = 1,
         seed: int = 42,
     ):
         self.n_features = n_features
         self.n_estimators = n_estimators
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
+        self.n_jobs = n_jobs
         self.seed = seed
         self.models: list = []
 
@@ -43,7 +45,7 @@ class ForestModel:
                 n_estimators=self.n_estimators,
                 max_depth=self.max_depth,
                 min_samples_leaf=self.min_samples_leaf,
-                n_jobs=-1,
+                n_jobs=self.n_jobs,
                 random_state=self.seed + number,
                 class_weight="balanced_subsample",
             )
@@ -77,6 +79,7 @@ class ForestModel:
                 "n_estimators": self.n_estimators,
                 "max_depth": self.max_depth,
                 "min_samples_leaf": self.min_samples_leaf,
+                "n_jobs": self.n_jobs,
                 "seed": self.seed,
                 "models": self.models,
             },
@@ -93,6 +96,7 @@ class ForestModel:
             n_estimators=payload["n_estimators"],
             max_depth=payload["max_depth"],
             min_samples_leaf=payload["min_samples_leaf"],
+            n_jobs=payload.get("n_jobs", 1),
             seed=payload["seed"],
         )
         model.models = payload["models"]

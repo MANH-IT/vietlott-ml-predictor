@@ -28,6 +28,7 @@ from .dataset import (
     make_sequences,
     make_tabular,
 )
+from .hyperparams import fit_params, resolve_params
 from .metrics import (
     compare_report,
     evaluate_predictions,
@@ -128,15 +129,17 @@ def _fit_predict_sequence(
 ) -> tuple[np.ndarray, float]:
     X_train = data.sequence.X[data.sequence.target_index <= data.cutoff]
     y_train = data.sequence.y[data.sequence.target_index <= data.cutoff]
-    model = build_model(model_name, data.n_features)
+    params = resolve_params(model_name, data.lottery)
+    model = build_model(model_name, data.n_features, params=params)
     started = time.perf_counter()
     if verbose:
         print(f"  [{model_name}] train trên {len(X_train)} mẫu...")
+    fit_kwargs = fit_params(model_name, params)
     if model_name == "mlp":
-        model.fit(X_train[:, -1, :], y_train, verbose=verbose)
+        model.fit(X_train[:, -1, :], y_train, verbose=verbose, **fit_kwargs)
         probabilities = model.predict_proba(data.X_last_test)
     else:
-        model.fit(X_train, y_train, verbose=verbose)
+        model.fit(X_train, y_train, verbose=verbose, **fit_kwargs)
         probabilities = model.predict_proba(data.X_seq_test)
     elapsed = time.perf_counter() - started
     save_model(model, data.lottery, model_name)
@@ -157,7 +160,7 @@ def _fit_predict_tabular(
     X_train = X_all[train_mask].reshape(-1, X_all.shape[-1])
     y_train = y_all[train_mask].reshape(-1)
 
-    model = build_model(model_name, n_features)
+    model = build_model(model_name, n_features, lottery=data.lottery)
     started = time.perf_counter()
     if verbose:
         print(f"  [{model_name}] train trên {len(X_train)} mẫu...")
@@ -172,7 +175,7 @@ def _fit_predict_tabular(
 def _fit_predict_markov(
     data: PreparedData, verbose: bool
 ) -> tuple[np.ndarray, float]:
-    model = build_model("markov", data.n_features)
+    model = build_model("markov", data.n_features, lottery=data.lottery)
     started = time.perf_counter()
     if verbose:
         print("  [markov] ước lượng ma trận chuyển đổi...")
@@ -383,6 +386,7 @@ def train_lottery(
             "display_name": DISPLAY_NAMES.get(name, name),
             "training_seconds": round(elapsed, 2),
             "model_file": str(model_path(lottery, name)),
+            "params": resolve_params(name, lottery),
             "metrics": metrics,
         }
         if verbose:
