@@ -33,6 +33,7 @@ Vietlott_VN/
 │   └── templates/index.html
 ├── scripts/test_api_383.py
 ├── tests/
+├── notebooks/                # phân tích dữ liệu + ma trận nhầm lẫn
 ├── data/raw/                 # dữ liệu JSONL (sinh ra khi chạy)
 ├── models/                   # mô hình đã train (sinh ra khi chạy)
 └── reports/                  # metrics + báo cáo markdown
@@ -106,6 +107,26 @@ python -m vietlott_ml.cli tune --lottery power655 --models lstm,mlp --val-ratio 
 
 Kết quả lưu ở `models/<lottery>/hyperparams.json` (đã git-ignore) và tự động được
 `train` áp dụng. Tune một phần (`--models`) sẽ giữ nguyên kết quả của các mô hình khác.
+
+## Notebook phân tích
+
+Hai notebook Jupyter (đã chạy sẵn output) trong `notebooks/`:
+
+- `01_data_analysis.ipynb` — tổng quan dữ liệu, ma trận multi-hot, tần suất, gap,
+  tần suất gần đây, cặp số đồng xuất hiện, phân bố thời gian và đặc trưng.
+- `02_model_confusion_matrices.ipynb` — ma trận nhầm lẫn của từng mô hình trên tập
+  test (theo ngưỡng 0.5 và theo top-k), precision/recall theo từng số, quét ngưỡng,
+  và so sánh với baseline ngẫu nhiên lý thuyết.
+
+Cài phụ thuộc và mở notebook:
+
+```bash
+pip install -e ".[notebooks]"
+jupyter notebook notebooks/
+```
+
+Notebook tự dùng mô hình đã lưu trong `models/`; nếu chưa có sẽ huấn luyện lại
+(chậm hơn). Chạy `train --lottery all` trước để dùng mô hình sẵn có.
 
 ## Thu thập dữ liệu định kỳ
 
