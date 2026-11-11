@@ -127,12 +127,34 @@ def evaluate_predictions(
     return result
 
 
+def holm_bonferroni(p_values: dict[str, float]) -> dict[str, float]:
+    """Hiệu chỉnh Holm–Bonferroni cho nhiều phép so sánh.
+
+    Trả về p-value đã hiệu chỉnh (cùng khóa). Thứ tự xử lý theo p tăng dần;
+    giá trị hiệu chỉnh được giữ đơn điệu không giảm để đảm bảo tính hợp lệ.
+    """
+    items = sorted(p_values.items(), key=lambda item: item[1])
+    total = len(items)
+    adjusted: dict[str, float] = {}
+    previous = 0.0
+    for rank, (name, p_value) in enumerate(items):
+        value = min(1.0, (total - rank) * float(p_value))
+        value = max(value, previous)
+        adjusted[name] = value
+        previous = value
+    return adjusted
+
+
 def compare_report(results: dict[str, dict]) -> str:
-    """Tạo bảng markdown so sánh các mô hình."""
+    """Tạo bảng markdown so sánh các mô hình.
+
+    Nếu metrics có ``p_value_holm`` (đã hiệu chỉnh đa so sánh) thì hiển thị
+    thêm cột và dùng nó cho cột "Có ý nghĩa".
+    """
     header = (
-        "| Mô hình | Avg hits | 95% CI | Lift | Precision@6 | p-value | "
-        "Có ý nghĩa (5%) |\n"
-        "|---|---:|---:|---:|---:|---:|:---:|\n"
+        "| Mô hình | Avg hits | 95% CI | Lift | Precision@6 | p-value | p Holm | "
+        "Có ý nghĩa (Holm 5%) |\n"
+        "|---|---:|---:|---:|---:|---:|---:|:---:|\n"
     )
     rows = []
     for name, metrics in results.items():
@@ -141,11 +163,17 @@ def compare_report(results: dict[str, dict]) -> str:
             if "ci95_low" in metrics
             else "-"
         )
+        p_holm = metrics.get("p_value_holm")
+        p_holm_text = f"{p_holm:.3f}" if p_holm is not None else "-"
+        significant = metrics.get(
+            "significant_holm_5pct", metrics.get("significant_5pct", False)
+        )
         rows.append(
             f"| {name} | {metrics['avg_hits']:.3f} | {ci} | "
             f"{metrics['lift_vs_random']:.3f} | "
             f"{metrics['precision_at_6']:.3f} | "
             f"{metrics['p_value']:.3f} | "
-            f"{'Có' if metrics['significant_5pct'] else 'Không'} |"
+            f"{p_holm_text} | "
+            f"{'Có' if significant else 'Không'} |"
         )
     return header + "\n".join(rows) + "\n"

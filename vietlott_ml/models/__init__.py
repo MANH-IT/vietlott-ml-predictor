@@ -24,6 +24,9 @@ DISPLAY_NAMES = {
     "mlp": "MLP",
     "xgboost": "XGBoost",
     "random": "Random baseline",
+    "repeat_last": "Lặp kỳ trước",
+    "frequency": "Top tần suất (mở rộng)",
+    "frequency_train": "Top tần suất (train)",
 }
 
 SEQUENCE_MODELS = {"lstm", "bilstm"}

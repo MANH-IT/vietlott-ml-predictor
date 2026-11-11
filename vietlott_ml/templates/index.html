@@ -304,14 +304,16 @@
         const report = await response.json();
         const rows = Object.entries(report.models).map(([key, info]) => {
           const m = info.metrics;
-          const significant = m.significant_5pct
+          const significant = (m.significant_holm_5pct ?? m.significant_5pct)
             ? '<span class="pill yes">Có</span>'
             : '<span class="pill no">Không</span>';
+          const pHolm = m.p_value_holm === undefined ? "-" : m.p_value_holm.toFixed(3);
           return `<tr>
             <td>${info.display_name}</td>
             <td class="num">${m.avg_hits.toFixed(3)}</td>
             <td class="num">${m.lift_vs_random.toFixed(3)}</td>
             <td class="num">${m.p_value.toFixed(3)}</td>
+            <td class="num">${pHolm}</td>
             <td>${significant}</td>
           </tr>`;
         }).join("");
@@ -325,7 +327,8 @@
             <thead><tr>
               <th>Mô hình</th><th class="num">Avg hits</th>
               <th class="num">Lift</th><th class="num">p-value</th>
-              <th>Có ý nghĩa (5%)</th>
+              <th class="num">p Holm</th>
+              <th>Có ý nghĩa (Holm 5%)</th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>

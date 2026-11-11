@@ -33,6 +33,7 @@ from .metrics import (
     compare_report,
     evaluate_predictions,
     hits_from_predictions,
+    holm_bonferroni,
     summarize_hits,
     top_k,
 )
@@ -41,6 +42,7 @@ from .models import (
     MODEL_NAMES,
     SEQUENCE_MODELS,
     TABULAR_MODELS,
+    TORCH_MODELS,
     build_model,
     load_model,
     model_path,
@@ -48,6 +50,8 @@ from .models import (
 )
 
 VN_TZ = timezone(timedelta(hours=7))
+
+BASELINE_NAMES = ("repeat_last", "frequency", "frequency_train")
 
 
 @dataclass
@@ -69,17 +73,25 @@ class PreparedData:
         return self.matrix.shape[1]
 
 
-def _prepare(lottery: str, window: int, train_ratio: float) -> PreparedData:
-    cfg = lottery_config(lottery)
+def build_datasets(
+    lottery: str, window: int
+) -> tuple[list[Draw], np.ndarray, SequenceDataset, TabularDataset]:
+    """Nạp dữ liệu và dựng sequence/tabular dataset dùng chung cho train/backtest."""
     draws, matrix = load_matrix(lottery)
     if len(draws) < MIN_HISTORY + window + 20:
         raise ValueError(
             f"{lottery}: cần tối thiểu {MIN_HISTORY + window + 20} kỳ, "
             f"hiện có {len(draws)}. Hãy chạy bootstrap trước."
         )
-    n_features = cfg["n_features"]
     sequence = make_sequences(matrix, window=window, min_target=MIN_HISTORY)
     tabular = make_tabular(matrix, min_history=MIN_HISTORY)
+    return draws, matrix, sequence, tabular
+
+
+def _prepare(lottery: str, window: int, train_ratio: float) -> PreparedData:
+    cfg = lottery_config(lottery)
+    draws, matrix, sequence, tabular = build_datasets(lottery, window)
+    n_features = cfg["n_features"]
 
     unique_targets = np.unique(sequence.target_index)
     split_pos = int(len(unique_targets) * train_ratio) - 1
@@ -186,6 +198,66 @@ def _fit_predict_markov(
     return probabilities, elapsed
 
 
+def fit_predict_fold(
+    model_name: str,
+    data: PreparedData,
+    fit_cutoff: int,
+    target_indices: np.ndarray,
+    params: dict | None = None,
+    fit_overrides: dict | None = None,
+    verbose: bool = False,
+) -> np.ndarray:
+    """Fit trên dữ liệu tới ``fit_cutoff`` và dự đoán cho ``target_indices``.
+
+    Dùng chung cho train/test, tuning và walk-forward để tránh lệch logic.
+    Không lưu model (caller quyết định).
+    """
+    if model_name not in MODEL_NAMES:
+        raise ValueError(f"Mô hình không hợp lệ: {model_name}")
+    resolved = params if params is not None else resolve_params(model_name, data.lottery)
+    target_indices = np.asarray(target_indices, dtype=int)
+    if len(target_indices) == 0:
+        raise ValueError("target_indices rỗng")
+
+    if model_name in TORCH_MODELS:
+        X_train = data.sequence.X[data.sequence.target_index <= fit_cutoff]
+        y_train = data.sequence.y[data.sequence.target_index <= fit_cutoff]
+        X_target = data.sequence.X[np.isin(data.sequence.target_index, target_indices)]
+        model = build_model(model_name, data.n_features, params=resolved)
+        kwargs = dict(fit_params(model_name, resolved))
+        kwargs.update(fit_overrides or {})
+        if verbose:
+            print(f"  [{model_name}] train trên {len(X_train)} mẫu...")
+        if model_name == "mlp":
+            model.fit(X_train[:, -1, :], y_train, verbose=verbose, **kwargs)
+            return model.predict_proba(X_target[:, -1, :])
+        model.fit(X_train, y_train, verbose=verbose, **kwargs)
+        return model.predict_proba(X_target)
+
+    if model_name in TABULAR_MODELS:
+        n_features = data.n_features
+        n_tab_samples = len(data.tabular.target_index) // n_features
+        tab_targets = data.tabular.target_index.reshape(n_tab_samples, n_features)[:, 0]
+        train_mask = tab_targets <= fit_cutoff
+        target_mask = np.isin(tab_targets, target_indices)
+        X_all = data.tabular.X.reshape(n_tab_samples, n_features, -1)
+        y_all = data.tabular.y.reshape(n_tab_samples, n_features)
+        X_train = X_all[train_mask].reshape(-1, X_all.shape[-1])
+        y_train = y_all[train_mask].reshape(-1)
+        model = build_model(model_name, n_features, lottery=data.lottery, params=resolved)
+        kwargs = dict(fit_params(model_name, resolved))
+        if verbose:
+            print(f"  [{model_name}] train trên {len(X_train)} mẫu...")
+        model.fit(X_train, y_train, **kwargs)
+        return model.predict_proba(X_all[target_mask].reshape(-1, X_all.shape[-1]))
+
+    model = build_model("markov", data.n_features, lottery=data.lottery)
+    if verbose:
+        print("  [markov] ước lượng ma trận chuyển đổi...")
+    model.fit(data.matrix[: fit_cutoff + 1])
+    return model.predict_proba(data.matrix, target_indices)
+
+
 def _evaluate_probabilities(
     data: PreparedData, probabilities: np.ndarray, k: int
 ) -> dict:
@@ -228,6 +300,33 @@ def _random_baseline(
         for offset in range(max(1, n_repeats))
     ]
     return summarize_hits(np.concatenate(all_hits), n_features=data.n_features, k=k)
+
+
+def baseline_predictions(
+    matrix: np.ndarray,
+    target_indices: np.ndarray,
+    k: int,
+    kind: str,
+    cutoff: int | None = None,
+) -> list[list[int]]:
+    """Dự đoán baseline không cần học.
+
+    - ``repeat_last``: lặp lại đúng bộ số của kỳ ngay trước.
+    - ``frequency``: top-k số xuất hiện nhiều nhất tính tới trước kỳ dự đoán.
+    - ``frequency_train``: top-k theo tần suất tích lũy tới ``cutoff``.
+    """
+    predictions: list[list[int]] = []
+    for target in np.asarray(target_indices, dtype=int):
+        if kind == "repeat_last":
+            numbers = np.flatnonzero(matrix[int(target) - 1] > 0) + 1
+            predictions.append(sorted(int(n) for n in numbers))
+        elif kind in {"frequency", "frequency_train"}:
+            end = int(target) if kind == "frequency" else int(cutoff) + 1
+            scores = matrix[:end].sum(axis=0)
+            predictions.append(sorted(top_k(scores, k)))
+        else:
+            raise ValueError(f"Baseline không hợp lệ: {kind}")
+    return predictions
 
 
 def _period(draws: list[Draw], indices: np.ndarray) -> dict:
@@ -288,6 +387,25 @@ def _build_report(
 
 def _write_report_files(data: PreparedData, report: dict) -> None:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    p_values = {
+        name: info["metrics"]["p_value"]
+        for name, info in report["models"].items()
+        if name != "random" and "p_value" in info["metrics"]
+    }
+    adjusted = holm_bonferroni(p_values)
+    for name, info in report["models"].items():
+        metrics = info["metrics"]
+        if name in adjusted:
+            metrics["p_value_holm"] = adjusted[name]
+            metrics["significant_holm_5pct"] = bool(
+                adjusted[name] < 0.05
+                and metrics["avg_hits"] > metrics["expected_random_hits"]
+            )
+    report["multiple_comparison"] = {
+        "method": "holm-bonferroni",
+        "n_tests": len(adjusted),
+        "adjusted_p_values": adjusted,
+    }
     report_path(data.lottery).write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -302,21 +420,23 @@ def _write_report_files(data: PreparedData, report: dict) -> None:
     significant = [
         (name, info)
         for name, info in report["models"].items()
-        if name != "random" and info["metrics"].get("significant_5pct")
+        if name != "random" and info["metrics"].get("significant_holm_5pct")
     ]
     if significant:
         names = ", ".join(
-            f"{info['display_name']} (p={info['metrics']['p_value']:.4f})"
+            f"{info['display_name']} (p Holm={info['metrics']['p_value_holm']:.4f})"
             for _, info in significant
         )
         conclusion = (
-            f"Các mô hình sau vượt baseline ngẫu nhiên ở mức ý nghĩa 5%: {names}. "
-            "Tuy nhiên cần kiểm chứng lại bằng walk-forward trên dữ liệu mới trước "
-            "khi coi là tín hiệu thật; xổ số vẫn được giả định là ngẫu nhiên."
+            f"Sau hiệu chỉnh Holm–Bonferroni cho {len(adjusted)} phép so sánh, các "
+            f"mô hình sau vẫn vượt baseline ngẫu nhiên ở mức ý nghĩa 5%: {names}. "
+            "Cần kiểm chứng lại bằng walk-forward trên dữ liệu mới trước khi coi là "
+            "tín hiệu thật; xổ số vẫn được giả định là ngẫu nhiên."
         )
     else:
         conclusion = (
-            "Không mô hình nào vượt trội có ý nghĩa thống kê so với baseline ngẫu "
+            f"Không mô hình nào vượt trội có ý nghĩa thống kê sau hiệu chỉnh "
+            f"Holm–Bonferroni ({len(adjusted)} phép so sánh) so với baseline ngẫu "
             "nhiên trên tập test. Điều này phù hợp với bản chất ngẫu nhiên của xổ số. "
             "Giá trị của dự án nằm ở pipeline học máy và quy trình đánh giá, không "
             "phải khả năng dự đoán kết quả."
@@ -332,6 +452,8 @@ def _write_report_files(data: PreparedData, report: dict) -> None:
         f"- Cửa sổ: {report['window']} kỳ",
         f"- Kỳ vọng ngẫu nhiên: **{report['expected_random_hits']:.4f}** số trúng/kỳ "
         f"(baseline lặp {report['random_baseline_repeats']} lần)",
+        f"- Hiệu chỉnh đa so sánh: Holm–Bonferroni "
+        f"({report['multiple_comparison']['n_tests']} phép so sánh)",
         "",
         "## So sánh mô hình",
         "",
@@ -412,6 +534,20 @@ def train_lottery(
     predictions["random"] = _random_predictions(
         data, k=lottery_config(lottery)["pick"]
     )
+    k = lottery_config(lottery)["pick"]
+    for kind in BASELINE_NAMES:
+        preds = baseline_predictions(
+            data.matrix, data.test_targets, k, kind, cutoff=data.cutoff
+        )
+        results[kind] = {
+            "display_name": DISPLAY_NAMES.get(kind, kind),
+            "training_seconds": 0.0,
+            "model_file": None,
+            "metrics": evaluate_predictions(
+                preds, data.actuals, n_features=data.n_features, k=k
+            ),
+        }
+        predictions[kind] = preds
     _write_predictions(data, predictions)
 
     report = _build_report(data, results, window=window, train_ratio=train_ratio)
@@ -471,6 +607,20 @@ def evaluate_saved_lottery(
         "model_file": None,
         "metrics": _random_baseline(data, k=lottery_config(lottery)["pick"]),
     }
+    k = lottery_config(lottery)["pick"]
+    for kind in BASELINE_NAMES:
+        preds = baseline_predictions(
+            data.matrix, data.test_targets, k, kind, cutoff=data.cutoff
+        )
+        results[kind] = {
+            "display_name": DISPLAY_NAMES.get(kind, kind),
+            "training_seconds": 0.0,
+            "model_file": None,
+            "metrics": evaluate_predictions(
+                preds, data.actuals, n_features=data.n_features, k=k
+            ),
+        }
+        predictions[kind] = preds
     if predictions:
         _write_predictions(data, predictions)
     report = _build_report(data, results, window=window, train_ratio=train_ratio)

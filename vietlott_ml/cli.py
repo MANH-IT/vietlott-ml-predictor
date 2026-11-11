@@ -7,6 +7,7 @@ import logging
 import sys
 import time
 
+from .backtest import walk_forward_lottery
 from .config import LOTTERIES, ensure_dirs
 from .data_collection import bootstrap, collect_live, configure_logging
 from .data_validation import validate_file
@@ -110,6 +111,18 @@ def cmd_tune(args: argparse.Namespace) -> None:
         )
 
 
+def cmd_walk_forward(args: argparse.Namespace) -> None:
+    models = _models(args.models)
+    for lottery in _lotteries(args.lottery):
+        walk_forward_lottery(
+            lottery,
+            model_names=models,
+            n_splits=args.splits,
+            initial_train_ratio=args.initial_train_ratio,
+            verbose=True,
+        )
+
+
 def cmd_predict(args: argparse.Namespace) -> None:
     import json
 
@@ -174,6 +187,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--models", default=None)
     p.add_argument("--val-ratio", type=float, default=0.2)
     p.set_defaults(func=cmd_tune)
+
+    p = sub.add_parser(
+        "walk-forward", help="Đánh giá walk-forward (rolling-origin)"
+    )
+    p.add_argument("--lottery", default="all")
+    p.add_argument("--models", default=None)
+    p.add_argument("--splits", type=int, default=4)
+    p.add_argument("--initial-train-ratio", type=float, default=0.6)
+    p.set_defaults(func=cmd_walk_forward)
 
     p = sub.add_parser("predict", help="Tạo bộ số gợi ý")
     p.add_argument("--lottery", required=True, choices=list(LOTTERIES))

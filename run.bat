@@ -9,6 +9,7 @@ rem   run.bat bootstrap                        tai du lieu lich su
 rem   run.bat collect                          lay ket qua live tu API
 rem   run.bat validate                         kiem tra du lieu
 rem   run.bat tune                             tuning hyperparameters
+rem   run.bat walk-forward                     danh gia walk-forward
 rem   run.bat train                            huan luyen va tao bao cao
 rem   run.bat evaluate                         danh gia lai mo hinh da luu
 rem   run.bat predict <lottery> [model]        tao bo so goi y
@@ -39,6 +40,7 @@ if /i "%CMD%"=="bootstrap" goto bootstrap
 if /i "%CMD%"=="collect" goto collect
 if /i "%CMD%"=="validate" goto validate
 if /i "%CMD%"=="tune" goto tune
+if /i "%CMD%"=="walk-forward" goto walkforward
 if /i "%CMD%"=="train" goto train
 if /i "%CMD%"=="evaluate" goto evaluate
 if /i "%CMD%"=="predict" goto predict
@@ -71,6 +73,11 @@ goto done
 :tune
 echo ==== Tuning hyperparameters tren validation ====
 "%PYTHON%" -m vietlott_ml.cli tune --lottery all %2 %3 %4 %5 %6
+goto done
+
+:walkforward
+echo ==== Danh gia walk-forward ====
+"%PYTHON%" -m vietlott_ml.cli walk-forward --lottery all %2 %3 %4 %5 %6
 goto done
 
 :train
@@ -127,6 +134,7 @@ echo   run.bat bootstrap                        - tai du lieu lich su
 echo   run.bat collect                          - lay ket qua live tu API
 echo   run.bat validate                         - kiem tra du lieu
 echo   run.bat tune [--lottery X] [--models A,B] - tuning hyperparameters
+echo   run.bat walk-forward [--lottery X] [--splits N] - danh gia walk-forward
 echo   run.bat train [--lottery X] [--models A,B] - huan luyen va tao bao cao
 echo   run.bat evaluate                         - danh gia lai mo hinh da luu
 echo   run.bat predict ^<lottery^> [model]       - tao bo so goi y - model mac dinh: lstm

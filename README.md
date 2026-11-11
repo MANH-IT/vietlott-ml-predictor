@@ -39,9 +39,10 @@ Dự án xây dựng một pipeline học máy **đầu-cuối** cho dữ liệu
 - Thu thập dữ liệu lịch sử và kỳ mới nhất.
 - Chuẩn hoá và kiểm tra dữ liệu.
 - Xây dựng đặc trưng (multi-hot, cửa sổ trượt, đặc trưng bảng).
-- Huấn luyện 7 mô hình và so sánh với baseline ngẫu nhiên.
+- Huấn luyện 7 mô hình và so sánh với baseline ngẫu nhiên + baseline mạnh.
 - Tuning hyperparameters trên validation (không dùng test).
-- Đánh giá bằng kiểm định thống kê, xuất báo cáo trung thực.
+- Đánh giá bằng kiểm định thống kê, hiệu chỉnh Holm–Bonferroni, walk-forward,
+  xuất báo cáo trung thực.
 - CLI, web demo FastAPI, notebook phân tích, Docker.
 
 Mục tiêu không phải là "dự đoán trúng" — mà là trình diễn một quy trình ML đúng đắn, có
@@ -51,11 +52,14 @@ kiểm soát rò rỉ dữ liệu và kết luận trung thực.
 
 - Thu thập dữ liệu real-time từ API `api.383.im`, lịch sử từ `vietlott-data`, crawler dự phòng.
 - Chuẩn hoá + kiểm tra dữ liệu (khoảng số, trùng lặp, đủ số, số đặc biệt, ngày).
-- 7 mô hình: **LSTM, BiLSTM, Logistic Regression, Random Forest, Markov, MLP, XGBoost** (+ baseline ngẫu nhiên).
-- Chia train/test **theo thời gian**, kiểm định z so với baseline ngẫu nhiên.
+- 7 mô hình: **LSTM, BiLSTM, Logistic Regression, Random Forest, Markov, MLP, XGBoost**
+  (+ baseline ngẫu nhiên, lặp kỳ trước, top tần suất).
+- Chia train/test **theo thời gian**, kiểm định z + hiệu chỉnh đa so sánh Holm–Bonferroni.
 - Tuning hyperparameters bằng grid search trên validation nội bộ phần train.
+- Walk-forward (rolling-origin) với expanding window để kiểm chứng độ ổn định.
 - Web demo FastAPI + giao diện tạo bộ số gợi ý.
-- CLI đầy đủ: `bootstrap`, `collect`, `validate`, `tune`, `train`, `evaluate`, `predict`, `pipeline`, `serve`.
+- CLI đầy đủ: `bootstrap`, `collect`, `validate`, `tune`, `walk-forward`, `train`,
+  `evaluate`, `predict`, `pipeline`, `serve`.
 - 2 notebook Jupyter: EDA và ma trận nhầm lẫn.
 - Docker + docker compose, CI (ruff + pytest).
 
@@ -117,6 +121,7 @@ Vietlott_VN/
 │   ├── metrics.py            # hit rate, lift, kiểm định z, so sánh mô hình
 │   ├── hyperparams.py        # defaults, search space, lưu/đọc tham số đã tune
 │   ├── tuning.py             # grid search trên validation (không dùng test)
+│   ├── backtest.py           # walk-forward (rolling-origin) + Holm–Bonferroni
 │   ├── training.py           # train/evaluate/report
 │   ├── predict.py            # sinh bộ số gợi ý
 │   ├── api.py                # FastAPI web demo
@@ -131,7 +136,7 @@ Vietlott_VN/
 │   │   └── markov_model.py   # Markov
 │   └── templates/index.html
 ├── scripts/test_api_383.py   # kiểm tra nhanh API live
-├── tests/                    # unit + API + training + tuning tests
+├── tests/                    # unit + API + training + tuning + backtest tests
 ├── notebooks/
 │   ├── 01_data_analysis.ipynb
 │   └── 02_model_confusion_matrices.ipynb
@@ -196,6 +201,7 @@ python -m vietlott_ml.cli <command> [options]
 | `collect` | Lấy kết quả kỳ mới từ API live, append vào JSONL | `--lottery`, `--watch`, `--interval` (giây, mặc định 300) |
 | `validate` | Kiểm tra dữ liệu đã lưu, in số bản ghi hợp lệ | `--lottery` |
 | `tune` | Grid search hyperparameters trên validation | `--lottery`, `--models`, `--val-ratio` (mặc định 0.2) |
+| `walk-forward` | Đánh giá rolling-origin nhiều fold | `--lottery`, `--models`, `--splits` (mặc định 4), `--initial-train-ratio` (mặc định 0.6) |
 | `train` | Huấn luyện, đánh giá trên test, xuất báo cáo | `--lottery`, `--models` |
 | `evaluate` | Đánh giá lại mô hình đã lưu (không train lại) | `--lottery`, `--models` |
 | `predict` | Sinh bộ số gợi ý cho kỳ kế tiếp | `--lottery` (bắt buộc), `--model`, `--seed` |
@@ -214,6 +220,9 @@ python -m vietlott_ml.cli train --lottery mega645 --models lstm,markov,logistic
 
 # Tune riêng nhóm torch với tỉ lệ validation 25%
 python -m vietlott_ml.cli tune --lottery power655 --models lstm,bilstm,mlp --val-ratio 0.25
+
+# Walk-forward 4 fold, train ban đầu 60%
+python -m vietlott_ml.cli walk-forward --lottery all --splits 4
 
 # Predict với seed cố định để tái lập
 python -m vietlott_ml.cli predict --lottery power655 --model random --seed 42
@@ -446,20 +455,38 @@ Metric chính là số số trúng trung bình mỗi kỳ (`avg_hits`) khi chọ
 | `expected_random_hits` | Kỳ vọng ngẫu nhiên `k² / F` |
 | `lift_vs_random` | `avg_hits / expected_random_hits` |
 | `z_score`, `p_value` | Kiểm định z so với kỳ vọng ngẫu nhiên (phương sai siêu bội) |
-| `significant_5pct` | `p < 0.05` và `avg_hits > expected` |
+| `significant_5pct` | `p < 0.05` và `avg_hits > expected` (chưa hiệu chỉnh) |
+| `p_value_holm` | p-value sau hiệu chỉnh Holm–Bonferroni cho nhiều mô hình |
+| `significant_holm_5pct` | `p_value_holm < 0.05` và `avg_hits > expected` |
 | `coverage_at_least_one` | Tỉ lệ kỳ trúng ít nhất 1 số |
 | `hit_distribution` | Phân bố số kỳ theo số trúng (0..k) |
 | `brier_score`, `log_loss` | Chất lượng xác suất (dùng cho tuning) |
 
 Kỳ vọng ngẫu nhiên: `6 × 6 / F` → **0.800** cho Mega (F=45), **0.655** cho Power (F=55).
 
-### 12.2 Baseline ngẫu nhiên
+### 12.2 Baseline
 
-Baseline lặp **50 seed**, gộp toàn bộ hit lại thành một phân bố để giảm nhiễu
-của một lần rút. Nhờ đó `avg_hits` tiến sát kỳ vọng lý thuyết và khoảng tin cậy
-phản ánh đúng độ bất định.
+Ngoài baseline ngẫu nhiên (lặp **50 seed**, gộp toàn bộ hit lại thành một phân bố
+để giảm nhiễu), báo cáo còn so sánh với ba baseline mạnh, không cần học:
 
-### 12.3 Tệp đầu ra
+| Baseline | Cách dự đoán |
+|---|---|
+| `repeat_last` | Lặp lại đúng bộ số của kỳ ngay trước |
+| `frequency` | Top `k` số xuất hiện nhiều nhất tính tới trước kỳ dự đoán |
+| `frequency_train` | Top `k` số theo tần suất tích lũy tới mốc train/fold |
+
+Các baseline này giúp phát hiện trường hợp mô hình "học" chỉ để tái tạo một quy
+tắc đơn giản như lặp kỳ trước hoặc chọn số nóng.
+
+### 12.3 Hiệu chỉnh đa so sánh
+
+Khi so sánh nhiều mô hình trên cùng tập test, p-value thô sẽ bị lạm phát. Báo cáo
+áp dụng **Holm–Bonferroni** trên toàn bộ mô hình và baseline (trừ `random`) và
+ghi thêm `p_value_holm`, `significant_holm_5pct`, cùng khối
+`multiple_comparison` trong JSON. Kết luận trong báo cáo markdown dùng Holm,
+không dùng p-value thô.
+
+### 12.4 Tệp đầu ra
 
 Sau `train`, mỗi lottery sinh ra:
 
@@ -468,31 +495,53 @@ Sau `train`, mỗi lottery sinh ra:
 - `reports/<lottery>_test_predictions.jsonl` — dự đoán từng kỳ test của mọi mô hình.
 - `models/<lottery>/<model>.pt` hoặc `.joblib` — mô hình đã lưu.
 
-### 12.4 Kết quả hiện tại
+Sau `walk-forward`, sinh thêm:
+
+- `reports/<lottery>_walkforward_metrics.json` — metrics gộp + metrics từng fold.
+- `reports/<lottery>_walkforward_report.md` — bảng tổng hợp và bảng theo fold.
+
+### 12.5 Kết quả hiện tại
 
 Trên dữ liệu mới nhất (Mega: 1.389 kỳ; Power: 1.421 kỳ; test 272/279 kỳ):
 
-| Lottery | Mô hình | Avg hits | Ngẫu nhiên | Lift | p-value | Có ý nghĩa 5%? |
+| Lottery | Mô hình | Avg hits | Lift | p-value | p Holm | Có ý nghĩa (Holm 5%) |
 |---|---|---:|---:|---:|---:|:---:|
-| Mega 6/45 | BiLSTM | 0.824 | 0.800 | 1.029 | 0.621 | Không |
-| Mega 6/45 | Markov | 0.801 | 0.800 | 1.002 | 0.975 | Không |
-| Mega 6/45 | Logistic | 0.798 | 0.800 | 0.997 | 0.963 | Không |
-| Mega 6/45 | Random Forest | 0.765 | 0.800 | 0.956 | 0.458 | Không |
-| Mega 6/45 | XGBoost | 0.761 | 0.800 | 0.951 | 0.412 | Không |
-| Mega 6/45 | MLP | 0.754 | 0.800 | 0.942 | 0.330 | Không |
-| Mega 6/45 | LSTM | 0.746 | 0.800 | 0.933 | 0.259 | Không |
-| Power 6/55 | MLP | 0.742 | 0.655 | 1.134 | 0.045 | Danh nghĩa |
-| Power 6/55 | BiLSTM | 0.703 | 0.655 | 1.073 | 0.271 | Không |
-| Power 6/55 | LSTM | 0.634 | 0.655 | 0.969 | 0.644 | Không |
-| Power 6/55 | Random Forest | 0.627 | 0.655 | 0.958 | 0.531 | Không |
-| Power 6/55 | Markov | 0.627 | 0.655 | 0.958 | 0.531 | Không |
-| Power 6/55 | XGBoost | 0.620 | 0.655 | 0.947 | 0.429 | Không |
-| Power 6/55 | Logistic | 0.602 | 0.655 | 0.920 | 0.229 | Không |
+| Mega 6/45 | BiLSTM | 0.824 | 1.029 | 0.621 | 1.000 | Không |
+| Mega 6/45 | Markov | 0.801 | 1.002 | 0.975 | 1.000 | Không |
+| Mega 6/45 | Logistic | 0.798 | 0.997 | 0.963 | 1.000 | Không |
+| Mega 6/45 | Random Forest | 0.765 | 0.956 | 0.458 | 1.000 | Không |
+| Mega 6/45 | XGBoost | 0.761 | 0.951 | 0.412 | 1.000 | Không |
+| Mega 6/45 | MLP | 0.754 | 0.942 | 0.330 | 1.000 | Không |
+| Mega 6/45 | LSTM | 0.746 | 0.933 | 0.259 | 1.000 | Không |
+| Power 6/55 | MLP | 0.742 | 1.134 | 0.045 | 0.448 | Không |
+| Power 6/55 | BiLSTM | 0.703 | 1.073 | 0.271 | 1.000 | Không |
+| Power 6/55 | LSTM | 0.634 | 0.969 | 0.644 | 1.000 | Không |
+| Power 6/55 | Random Forest | 0.627 | 0.958 | 0.531 | 1.000 | Không |
+| Power 6/55 | Markov | 0.627 | 0.958 | 0.531 | 1.000 | Không |
+| Power 6/55 | XGBoost | 0.620 | 0.947 | 0.429 | 1.000 | Không |
+| Power 6/55 | Logistic | 0.602 | 0.920 | 0.229 | 1.000 | Không |
+
+Baseline mạnh trên test: Mega `frequency` 0.783 (p=0.722), `frequency_train` 0.772
+(p=0.557), `repeat_last` 0.761; Power `frequency_train` 0.728 (p=0.093,
+Holm=0.841), `frequency` 0.674, `repeat_last` 0.659.
+
+**Walk-forward 4 fold** (train ban đầu 60%, expanding window) xác nhận bức tranh
+tương tự:
+
+| Lottery | Mô hình | Avg hits | p-value | p Holm |
+|---|---|---:|---:|---:|
+| Mega 6/45 | XGBoost | 0.822 | 0.519 | 1.000 |
+| Mega 6/45 | `frequency_train` | 0.822 | 0.519 | 1.000 |
+| Mega 6/45 | Logistic | 0.818 | 0.592 | 1.000 |
+| Power 6/55 | MLP | 0.716 | 0.045 | 0.405 |
+| Power 6/55 | `frequency_train` | 0.682 | 0.369 | 1.000 |
+| Power 6/55 | Random Forest | 0.583 | 0.021 | 0.211 |
 
 Lưu ý về MLP của Power 6/55 (`p = 0.045`): đây là **p-value danh nghĩa** khi xét
-riêng lẻ. Vì có 7 mô hình × 2 lottery = 14 phép so sánh, khả năng xuất hiện ít
-nhất một kết quả `p < 0.05` do may mắn là đáng kể. **Chưa thể coi là tín hiệu
-thật**; cần kiểm chứng bằng walk-forward trên dữ liệu mới.
+riêng lẻ; sau hiệu chỉnh Holm là **0.448** (test) và **0.405** (walk-forward),
+nên **không đủ bằng chứng**. Random Forest Power có `p = 0.021` thô trong
+walk-forward nhưng `avg_hits = 0.583` **thấp hơn** baseline ngẫu nhiên (0.663,
+lift 0.891), nên cũng không phải tín hiệu tốt; Holm = 0.211.
 
 Không mô hình nào vượt trội một cách thuyết phục so với ngẫu nhiên. Đây là kết quả
 **đúng với bản chất ngẫu nhiên của xổ số** và là một phần quan trọng của dự án.
@@ -613,6 +662,7 @@ run.bat bootstrap
 run.bat collect
 run.bat validate
 run.bat tune --lottery power655
+run.bat walk-forward --splits 4
 run.bat train --models lstm,mlp
 run.bat evaluate
 run.bat predict mega645 markov
