@@ -142,7 +142,7 @@ def predict(payload: PredictRequest) -> dict:
             detail=f"Mô hình không hợp lệ. Chọn: {', '.join(MODEL_NAMES + ['random'])}",
         )
     try:
-        return json.loads(generate_numbers(payload.lottery, payload.model, seed=payload.seed))
+        return generate_numbers(payload.lottery, payload.model, seed=payload.seed)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:

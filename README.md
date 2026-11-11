@@ -8,7 +8,7 @@ Pipeline học máy thực hành trên dữ liệu xổ số Vietlott (**Mega 6/
 
 - Thu thập dữ liệu real-time từ API `api.383.im` (kỳ mới nhất), lịch sử từ `vietlott-data`, và crawler dự phòng.
 - Chuẩn hoá + kiểm tra dữ liệu (khoảng số, trùng lặp, đủ số, số đặc biệt).
-- 06 mô hình: **LSTM, BiLSTM, Logistic Regression, Random Forest, Markov, MLP**.
+- 08 mô hình: **LSTM, BiLSTM, Logistic Regression, Random Forest, Markov, MLP, XGBoost** (+ baseline ngẫu nhiên).
 - Chia train/test theo thời gian, so sánh với baseline ngẫu nhiên bằng kiểm định z.
 - Web demo FastAPI + giao diện tạo bộ số gợi ý.
 - CLI đầy đủ: bootstrap, collect, validate, train, evaluate, predict, serve.
@@ -131,22 +131,23 @@ Tất cả mô hình đều dự đoán xác suất xuất hiện của từng s
 | **Random Forest** | Một rừng nhị phân cho mỗi số, cùng bộ features. |
 | **Markov** | Ma trận chuyển đổi số → số; điểm của số j là tổng xác suất chuyển từ các số trong kỳ trước. |
 | **MLP** | Multi-hot kỳ trước → 2 lớp ẩn → sigmoid cho kỳ kế tiếp. |
+| **XGBoost** | Bộ phân loại nhị phân gradient boosting cho mỗi số, cùng bộ features dạng bảng. |
 
 **Features dạng bảng:** tần suất trong 5/10/20/50 kỳ, gap từ lần xuất hiện cuối, số lần xuất hiện, tần suất toàn bộ, average gap, xuất hiện ở kỳ trước.
 
 ## Đánh giá trung thực
 
 - Chia **theo thời gian** (80% train, 20% test) — không xáo trộn để tránh rò rỉ tương lai.
-- Metric chính: số số trúng trung bình/kỳ (`avg_hits`), `lift` so với ngẫu nhiên, `precision@6`, `p-value` (kiểm định z với phương sai siêu bội).
-- Baseline ngẫu nhiên: chọn 6 số đều nhau.
+- Metric chính: số số trúng trung bình/kỳ (`avg_hits`), khoảng tin cậy 95%, `lift` so với ngẫu nhiên, `precision@6`, `p-value` (kiểm định z với phương sai siêu bội).
+- Baseline ngẫu nhiên: lặp **50 seed** rồi gộp phân bố để giảm nhiễu của một lần rút.
 - Kỳ vọng ngẫu nhiên: `6 × 6 / F` → **0.800** cho Mega (F=45), **0.655** cho Power (F=55).
 
 Kết quả trên dữ liệu hiện tại (xem `reports/{lottery}_report.md`):
 
 | Lottery | Mô hình tốt nhất | Avg hits | Ngẫu nhiên | Có ý nghĩa? |
 |---|---|---:|---:|:---:|
-| Mega 6/45 | MLP | 0.801 | 0.800 | Không |
-| Power 6/55 | BiLSTM | 0.673 | 0.655 | Không |
+| Mega 6/45 | BiLSTM / MLP | 0.801 | 0.800 | Không |
+| Power 6/55 | BiLSTM | 0.712 | 0.655 | Không |
 
 Không mô hình nào vượt trội có ý nghĩa thống kê so với ngẫu nhiên. Đây là kết quả **đúng với bản chất ngẫu nhiên của xổ số** và là một phần quan trọng của dự án.
 
@@ -166,10 +167,11 @@ python -m vietlott_ml.cli serve
 ## Kiểm thử
 
 ```bash
-python -m pytest -q
+python -m pytest -q      # unit + API + training tests
+ruff check .             # lint (cấu hình trong pyproject.toml)
 ```
 
-Bao gồm test validation, dataset (shape + chống rò rỉ tương lai), model smoke tests và metrics.
+Bao gồm test validation, dataset (shape + chống rò rỉ tương lai), model smoke tests, metrics, API và training. CI chạy lint + test trên Python 3.12 qua `.github/workflows/ci.yml`.
 
 ## Giới hạn
 

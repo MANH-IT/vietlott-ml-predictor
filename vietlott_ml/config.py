@@ -58,6 +58,8 @@ WINDOW_SIZE = 10
 TRAIN_RATIO = 0.8
 MIN_HISTORY = 30
 RANDOM_SEED = 42
+# Số lần lặp baseline ngẫu nhiên để giảm nhiễu của một lần rút.
+RANDOM_BASELINE_REPEATS = 50
 
 DISCLAIMER = (
     "Chỉ phục vụ học tập/nghiên cứu. Xổ số là quá trình ngẫu nhiên thuần túy; "

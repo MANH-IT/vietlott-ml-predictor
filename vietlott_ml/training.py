@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
 from .config import (
     DISCLAIMER,
     MIN_HISTORY,
+    RANDOM_BASELINE_REPEATS,
     RANDOM_SEED,
     REPORTS_DIR,
     TRAIN_RATIO,
@@ -19,6 +20,7 @@ from .config import (
     lottery_config,
     report_path,
 )
+from .data_validation import Draw
 from .dataset import (
     SequenceDataset,
     TabularDataset,
@@ -26,8 +28,13 @@ from .dataset import (
     make_sequences,
     make_tabular,
 )
-from .data_validation import Draw
-from .metrics import compare_report, evaluate_predictions, top_k
+from .metrics import (
+    compare_report,
+    evaluate_predictions,
+    hits_from_predictions,
+    summarize_hits,
+    top_k,
+)
 from .models import (
     DISPLAY_NAMES,
     MODEL_NAMES,
@@ -202,12 +209,22 @@ def _random_predictions(
 
 
 def _random_baseline(
-    data: PreparedData, k: int, seed: int = RANDOM_SEED
+    data: PreparedData,
+    k: int,
+    seed: int = RANDOM_SEED,
+    n_repeats: int = RANDOM_BASELINE_REPEATS,
 ) -> dict:
-    predictions = _random_predictions(data, k, seed)
-    return evaluate_predictions(
-        predictions, data.actuals, n_features=data.n_features, k=k
-    )
+    """Baseline ngẫu nhiên lặp nhiều seed để giảm nhiễu do một lần rút.
+
+    Gộp số trúng của tất cả các lần lặp thành một phân bố chung, nhờ đó
+    avg_hits tiến sát kỳ vọng lý thuyết và khoảng tin cậy phản ánh đúng
+    độ bất định của phép chọn ngẫu nhiên.
+    """
+    all_hits = [
+        hits_from_predictions(_random_predictions(data, k, seed + offset), data.actuals)
+        for offset in range(max(1, n_repeats))
+    ]
+    return summarize_hits(np.concatenate(all_hits), n_features=data.n_features, k=k)
 
 
 def _period(draws: list[Draw], indices: np.ndarray) -> dict:
@@ -259,6 +276,7 @@ def _build_report(
         "test_period": _period(data.draws, test_indices),
         "n_train_targets": int((data.sequence.target_index <= data.cutoff).sum()),
         "n_test_targets": int(len(test_indices)),
+        "random_baseline_repeats": RANDOM_BASELINE_REPEATS,
         "models": model_results,
         "disclaimer": DISCLAIMER,
     }
@@ -278,6 +296,28 @@ def _write_report_files(data: PreparedData, report: dict) -> None:
     best = max(
         report["models"].items(), key=lambda item: item[1]["metrics"]["avg_hits"]
     )
+    significant = [
+        (name, info)
+        for name, info in report["models"].items()
+        if name != "random" and info["metrics"].get("significant_5pct")
+    ]
+    if significant:
+        names = ", ".join(
+            f"{info['display_name']} (p={info['metrics']['p_value']:.4f})"
+            for _, info in significant
+        )
+        conclusion = (
+            f"Các mô hình sau vượt baseline ngẫu nhiên ở mức ý nghĩa 5%: {names}. "
+            "Tuy nhiên cần kiểm chứng lại bằng walk-forward trên dữ liệu mới trước "
+            "khi coi là tín hiệu thật; xổ số vẫn được giả định là ngẫu nhiên."
+        )
+    else:
+        conclusion = (
+            "Không mô hình nào vượt trội có ý nghĩa thống kê so với baseline ngẫu "
+            "nhiên trên tập test. Điều này phù hợp với bản chất ngẫu nhiên của xổ số. "
+            "Giá trị của dự án nằm ở pipeline học máy và quy trình đánh giá, không "
+            "phải khả năng dự đoán kết quả."
+        )
     lines = [
         f"# Báo cáo {report['name']}",
         "",
@@ -287,7 +327,8 @@ def _write_report_files(data: PreparedData, report: dict) -> None:
         f"- Test: {report['test_period']['start']} → {report['test_period']['end']} "
         f"({report['n_test_targets']} kỳ đích)",
         f"- Cửa sổ: {report['window']} kỳ",
-        f"- Kỳ vọng ngẫu nhiên: **{report['expected_random_hits']:.4f}** số trúng/kỳ",
+        f"- Kỳ vọng ngẫu nhiên: **{report['expected_random_hits']:.4f}** số trúng/kỳ "
+        f"(baseline lặp {report['random_baseline_repeats']} lần)",
         "",
         "## So sánh mô hình",
         "",
@@ -297,10 +338,7 @@ def _write_report_files(data: PreparedData, report: dict) -> None:
         "",
         "## Kết luận trung thực",
         "",
-        "Không mô hình nào vượt trội có ý nghĩa thống kê so với baseline ngẫu nhiên "
-        "trên tập test. Điều này phù hợp với bản chất ngẫu nhiên của xổ số. Giá trị "
-        "của dự án nằm ở pipeline học máy và quy trình đánh giá, không phải khả năng "
-        "dự đoán kết quả.",
+        conclusion,
         "",
         "> **Cảnh báo:** " + DISCLAIMER,
         "",

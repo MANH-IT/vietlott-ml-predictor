@@ -9,6 +9,16 @@ from pathlib import Path
 import numpy as np
 
 
+def n_samples_from_rows(rows: int, n_features: int) -> int:
+    """Số mẫu khi X được xếp theo (sample, number), kiểm tra chia hết."""
+    if rows % n_features:
+        raise ValueError(
+            f"Số hàng ({rows}) không chia hết cho số đặc trưng ({n_features}); "
+            "dữ liệu tabular phải có dạng (n_samples * n_features, ...)"
+        )
+    return rows // n_features
+
+
 def positive_probability(clf, X: np.ndarray) -> np.ndarray:
     """Lấy xác suất lớp dương, xử lý trường hợp chỉ có một lớp."""
     classes = list(getattr(clf, "classes_", []))

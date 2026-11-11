@@ -18,7 +18,6 @@ from .models import (
     SEQUENCE_MODELS,
     TABULAR_MODELS,
     load_model,
-    model_path,
 )
 
 

@@ -21,28 +21,26 @@ def _at_least_one_probability(n_features: int, k: int) -> float:
     return 1.0 - math.comb(n_features - k, k) / math.comb(n_features, k)
 
 
-def evaluate_predictions(
-    predictions: list[list[int]],
-    actuals: list[list[int]],
-    n_features: int,
-    probabilities: np.ndarray | None = None,
-    targets: np.ndarray | None = None,
-    k: int = 6,
-) -> dict:
-    """Tính hit rate, lift và kiểm định so với kỳ vọng ngẫu nhiên.
-
-    predictions/actuals: danh sách bộ số (1-based) cho từng kỳ test.
-    probabilities/targets: ma trận xác suất và nhãn nhị phân (nếu có) để
-    tính Brier score và log-loss.
-    """
+def hits_from_predictions(
+    predictions: list[list[int]], actuals: list[list[int]]
+) -> np.ndarray:
+    """Số số trúng cho từng kỳ (1-based)."""
     if len(predictions) != len(actuals):
         raise ValueError("predictions và actuals phải cùng độ dài")
-    if not predictions:
-        return {"n_test": 0}
-
-    hits = np.array(
-        [len(set(p) & set(a)) for p, a in zip(predictions, actuals)], dtype=float
+    return np.array(
+        [len(set(p) & set(a)) for p, a in zip(predictions, actuals, strict=True)], dtype=float
     )
+
+
+def summarize_hits(hits: np.ndarray, n_features: int, k: int = 6) -> dict:
+    """Tóm tắt phân bố số trúng và kiểm định so với kỳ vọng ngẫu nhiên.
+
+    Nhận thẳng mảng hits để có thể gộp nhiều lần lặp (ví dụ nhiều seed của
+    baseline ngẫu nhiên) thành một phân bố chung.
+    """
+    hits = np.asarray(hits, dtype=float)
+    if len(hits) == 0:
+        return {"n_test": 0}
     mean_hits = float(hits.mean())
     expected_hits = k * k / n_features
     std_hits = float(hits.std(ddof=1)) if len(hits) > 1 else 0.0
@@ -64,11 +62,19 @@ def evaluate_predictions(
         2.0 * (1.0 - NormalDist().cdf(abs(z_score))) if stderr > 0 else 1.0
     )
 
+    # Khoảng tin cậy 95% cho avg_hits (xấp xỉ chuẩn).
+    sample_std_error = std_hits / math.sqrt(len(hits)) if len(hits) > 1 else 0.0
+    ci95_low = mean_hits - 1.96 * sample_std_error
+    ci95_high = mean_hits + 1.96 * sample_std_error
+
     result = {
         "n_test": int(len(hits)),
         "avg_hits": mean_hits,
         "median_hits": float(np.median(hits)),
         "std_hits": std_hits,
+        "std_error_hits": sample_std_error,
+        "ci95_low": float(ci95_low),
+        "ci95_high": float(ci95_high),
         "precision_at_6": mean_hits / k,
         "recall_at_6": mean_hits / k,
         "expected_random_hits": expected_hits,
@@ -83,6 +89,29 @@ def evaluate_predictions(
         },
         "max_hits": int(hits.max()),
     }
+    return result
+
+
+def evaluate_predictions(
+    predictions: list[list[int]],
+    actuals: list[list[int]],
+    n_features: int,
+    probabilities: np.ndarray | None = None,
+    targets: np.ndarray | None = None,
+    k: int = 6,
+) -> dict:
+    """Tính hit rate, lift và kiểm định so với kỳ vọng ngẫu nhiên.
+
+    predictions/actuals: danh sách bộ số (1-based) cho từng kỳ test.
+    probabilities/targets: ma trận xác suất và nhãn nhị phân (nếu có) để
+    tính Brier score và log-loss.
+    """
+    if len(predictions) != len(actuals):
+        raise ValueError("predictions và actuals phải cùng độ dài")
+    if not predictions:
+        return {"n_test": 0}
+
+    result = summarize_hits(hits_from_predictions(predictions, actuals), n_features, k)
 
     if probabilities is not None and targets is not None:
         probs = np.asarray(probabilities, dtype=float).ravel()
@@ -101,14 +130,19 @@ def evaluate_predictions(
 def compare_report(results: dict[str, dict]) -> str:
     """Tạo bảng markdown so sánh các mô hình."""
     header = (
-        "| Mô hình | Avg hits | Lift | Precision@6 | p-value | "
+        "| Mô hình | Avg hits | 95% CI | Lift | Precision@6 | p-value | "
         "Có ý nghĩa (5%) |\n"
-        "|---|---:|---:|---:|---:|:---:|\n"
+        "|---|---:|---:|---:|---:|---:|:---:|\n"
     )
     rows = []
     for name, metrics in results.items():
+        ci = (
+            f"[{metrics['ci95_low']:.3f}, {metrics['ci95_high']:.3f}]"
+            if "ci95_low" in metrics
+            else "-"
+        )
         rows.append(
-            f"| {name} | {metrics['avg_hits']:.3f} | "
+            f"| {name} | {metrics['avg_hits']:.3f} | {ci} | "
             f"{metrics['lift_vs_random']:.3f} | "
             f"{metrics['precision_at_6']:.3f} | "
             f"{metrics['p_value']:.3f} | "

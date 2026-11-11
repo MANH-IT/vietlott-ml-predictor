@@ -11,7 +11,14 @@ from .base import TorchBinaryModel, get_device
 
 class _LSTMNet:
     @staticmethod
-    def build(n_features: int, hidden1: int, hidden2: int, dropout: float, bidirectional: bool):
+    def build(
+        n_features: int,
+        hidden1: int,
+        hidden2: int,
+        dropout: float,
+        bidirectional: bool,
+        pooling: str,
+    ):
         import torch
         from torch import nn
 
@@ -40,7 +47,13 @@ class _LSTMNet:
                 out, _ = self.lstm1(x)
                 out = self.drop1(out)
                 out, _ = self.lstm2(out)
-                out = self.drop2(out[:, -1, :])
+                if pooling == "mean":
+                    # Trung bình qua mọi timestep: cả hai chiều của BiLSTM đều
+                    # đóng góp vào biểu diễn, thay vì chỉ token cuối.
+                    out = out.mean(dim=1)
+                else:
+                    out = out[:, -1, :]
+                out = self.drop2(out)
                 return self.fc(out)
 
         return Net()
@@ -58,6 +71,7 @@ class LSTMModel(TorchBinaryModel):
         hidden2: int = 64,
         dropout: float = 0.2,
         bidirectional: bool = False,
+        pooling: str = "auto",
         seed: int = 42,
     ):
         super().__init__(n_features=n_features, seed=seed)
@@ -65,6 +79,16 @@ class LSTMModel(TorchBinaryModel):
         self.hidden2 = hidden2
         self.dropout = dropout
         self.bidirectional = bidirectional
+        if pooling not in ("auto", "last", "mean"):
+            raise ValueError(f"pooling không hợp lệ: {pooling}")
+        self.pooling = pooling
+
+    def _resolved_pooling(self) -> str:
+        if self.pooling != "auto":
+            return self.pooling
+        # BiLSTM mặc định mean pooling (chiều ngược chỉ thấy 1 token ở vị trí
+        # cuối nếu dùng last), LSTM giữ last timestep.
+        return "mean" if self.bidirectional else "last"
 
     @property
     def name(self) -> str:
@@ -77,6 +101,7 @@ class LSTMModel(TorchBinaryModel):
             self.hidden2,
             self.dropout,
             self.bidirectional,
+            self._resolved_pooling(),
         )
 
     def get_config(self) -> dict:
@@ -86,6 +111,7 @@ class LSTMModel(TorchBinaryModel):
             "hidden2": self.hidden2,
             "dropout": self.dropout,
             "bidirectional": self.bidirectional,
+            "pooling": self.pooling,
             "seed": self.seed,
         }
 

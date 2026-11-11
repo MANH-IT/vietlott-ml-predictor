@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date as Date
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from .config import lottery_config
 
@@ -71,7 +72,7 @@ def validate_draw(record: dict[str, Any]) -> list[str]:
         errors.append(f"date không hợp lệ: {raw_date!r}")
 
     raw_numbers = record.get("numbers")
-    if not isinstance(raw_numbers, (list, tuple)):
+    if not isinstance(raw_numbers, list | tuple):
         errors.append("numbers phải là list")
         return errors
 
@@ -123,7 +124,7 @@ def normalize_draw(
     extra: dict[str, Any] | None = None,
 ) -> Draw:
     """Chuyển dữ liệu thô về Draw đã chuẩn hoá (chưa validate)."""
-    parsed_numbers = tuple(_as_int(n) for n in numbers)
+    parsed_numbers = tuple(sorted(_as_int(n) for n in numbers))
     parsed_special = None if special is None or special == "" else _as_int(special)
     return Draw(
         lottery=lottery,

@@ -1,91 +1,95 @@
 @echo off
 :: ============================================================================
 :: Vietlott LSTM Predictor - Run batch file
-:: Giúp chạy nhanh các lệnh CLI thông thường không cần gõ python -m mỗi lần.
+:: Giup chay nhanh cac lenh CLI thuong dung khong can go python -m moi lan.
 :: --------------------------------------------
-:: Cách dùng:
-::   double-click để chạy mặc định (chạy web demo)
-::   hoặc truyền tham số: bootstrap, collect, validate, train, evaluate, predict, pipeline
+:: Cach dung:
+::   double-click de chay mac dinh (chay web demo)
+::   hoac truyen tham so: bootstrap, collect, validate, train, evaluate, predict, pipeline
 ::
-::   Ví dụ: run.bat train
-::        run.bat predict mega645 lstm
-::        run.bat pipeline
+::   Vi du: run.bat train
+::          run.bat predict mega645 lstm
+::          run.bat pipeline
 :: ============================================================================
 
-:: Đảm bảo chạy từ thư mục chứa project (tự đổi đường dẫn nếu cần)
+:: Dam bao chay tu thu muc chua project (tu doi duong dan neu can)
 cd /d "%~dp0"
 
-:: Chạy lệnh python -m vietlott_ml.cli với tham số đã truyền
+:: Chay lenh python -m vietlott_ml.cli voi tham so da truyen
 if "%1"=="" (
-    :: Mặc định: chạy web demo FastAPI
-    echo ==== Chạy web demo FastAPI (http://127.0.0.1:8000) ====
+    :: Mac dinh: chay web demo FastAPI tai http://127.0.0.1:8000
+    echo ==== Chay web demo FastAPI - http://127.0.0.1:8000 ====
     python -m vietlott_ml.cli serve
     exit /b
 )
 
-:: Hỗ trợ các lệnh CLI
+:: Ho tro cac lenh CLI (giu nguyen %1..%3, khong shift de khong mat tham so)
 set CMD=%1
-shift
 
 if "%CMD%"=="bootstrap" (
-    echo ==== Tải dữ liệu lịch sử (bootstrap) ====
+    echo ==== Tai du lieu lich su - bootstrap ====
     python -m vietlott_ml.cli bootstrap --lottery all
     exit /b
 )
 
 if "%CMD%"=="collect" (
-    echo ==== Thu thập kết quả live từ API ====
+    echo ==== Thu thap ket qua live tu API ====
     python -m vietlott_ml.cli collect --lottery all
     exit /b
 )
 
 if "%CMD%"=="validate" (
-    echo ==== Kiểm tra dữ liệu đã lưu ====
+    echo ==== Kiem tra du lieu da luu ====
     python -m vietlott_ml.cli validate --lottery all
     exit /b
 )
 
 if "%CMD%"=="train" (
-    echo ==== Huấn luyện và đánh giá mô hình ====
+    echo ==== Huan luyen va danh gia mo hinh ====
     python -m vietlott_ml.cli train --lottery all
     exit /b
 )
 
 if "%CMD%"=="evaluate" (
-    echo ==== Đánh giá lại mô hình đã lưu ====
+    echo ==== Danh gia lai mo hinh da luu ====
     python -m vietlott_ml.cli evaluate --lottery all
     exit /b
 )
 
-if "%CMD%"=="predict" (
-    :: Tham số thứ 2: lottery, thứ 3: model
-    if "%2"=="" (
-        echo Cần cung cấp lottery và model.
-        echo Ví dụ: run.bat predict power655 lstm
-        exit /b 1
-    )
-    echo ==== Tạo bộ số gợi ý ====
-    python -m vietlott_ml.cli predict --lottery %2 --model %3
-    exit /b
-)
+if "%CMD%"=="predict" goto predict
 
 if "%CMD%"=="pipeline" (
-    echo ==== Chạy bootstrap + collect + train ====
+    echo ==== Chay bootstrap + collect + train ====
     python -m vietlott_ml.cli pipeline --lottery all
     exit /b
 )
 
 echo.
-echo Thuong:%1 khong hop le!
+echo Lenh "%CMD%" khong hop le!
 echo.
 echo Huong dan su dung:
-echo   run.bat               -> chay web demo mac dinh
-echo   run.bat bootstrap     -> tai lieu su kien
-echo   run.bat collect       -> lay ket qua live
-echo   run.bat validate      -> kiem tra du lieu
-echo   run.bat train         -> train & tao bao cao
-echo   run.bat evaluate      -> danh gia lai mo hinh
-echo   run.bat predict <lo> <model> -> tao bo so
-echo   run.bat pipeline      -> chay day du bo water
+echo   run.bat                           - chay web demo - mac dinh
+echo   run.bat bootstrap                 - tai du lieu lich su
+echo   run.bat collect                   - lay ket qua live tu API
+echo   run.bat validate                  - kiem tra du lieu
+echo   run.bat train                     - huan luyen va tao bao cao
+echo   run.bat evaluate                  - danh gia lai mo hinh da luu
+echo   run.bat predict ^<lottery^> [model] - tao bo so goi y - model mac dinh: lstm
+echo   run.bat pipeline                  - chay day du pipeline
 echo.
 exit /b 1
+
+:: ---- predict: tham so thu 2 la lottery, thu 3 - tuy chon - la model ----
+:predict
+if "%2"=="" (
+    echo Can cung cap lottery.
+    echo Vi du: run.bat predict power655 lstm
+    exit /b 1
+)
+echo ==== Tao bo so goi y ====
+if "%3"=="" (
+    python -m vietlott_ml.cli predict --lottery %2
+) else (
+    python -m vietlott_ml.cli predict --lottery %2 --model %3
+)
+exit /b 0

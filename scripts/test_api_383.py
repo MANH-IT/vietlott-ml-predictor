@@ -12,7 +12,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from vietlott_ml.config import LIVE_API_URL  # noqa: E402
-from vietlott_ml.data_collection import fetch_live_payload, parse_live_payload  # noqa: E402
+from vietlott_ml.data_collection import (  # noqa: E402
+    fetch_live_payload,
+    parse_live_payload,
+)
 
 
 def main() -> int:

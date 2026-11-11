@@ -79,3 +79,14 @@ def test_normalize_strings():
     )
     assert draw.numbers == (7, 14, 20, 30, 34, 40)
     assert draw.date == "2026-01-01"
+
+
+def test_normalize_sorts_numbers():
+    draw = normalize_draw(
+        lottery="power655",
+        draw_id="01420",
+        date="2026-11-05",
+        numbers=[52, 6, 41, 34, 20, 49],
+        special=36,
+    )
+    assert draw.numbers == (6, 20, 34, 41, 49, 52)

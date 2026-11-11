@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
-from datetime import datetime, timezone, timedelta
+from collections.abc import Iterable
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable
 
 import requests
 
@@ -87,7 +87,7 @@ def parse_live_payload(payload: dict, collected_at: str | None = None) -> list[D
         if len(numbers) != cfg["pick"]:
             LOGGER.warning("%s: bỏ qua payload live không đủ số: %s", lottery, numbers)
             continue
-        draw_id = str(block.get("ky") or "").strip() or str(block.get("d"))
+        draw_id = str(block.get("ky") or "").strip() or str(block.get("d") or "")
         try:
             draw = normalize_draw(
                 lottery=lottery,

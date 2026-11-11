@@ -39,6 +39,14 @@ def test_parse_skips_incomplete_state():
     assert all(draw.lottery != "mega645" for draw in draws)
 
 
+def test_parse_skips_missing_draw_id():
+    payload = live_payload()
+    payload["mega645"]["ky"] = ""
+    payload["mega645"]["d"] = None
+    draws = parse_live_payload(payload)
+    assert all(draw.lottery != "mega645" for draw in draws)
+
+
 def test_merge_prefers_complete_record():
     incomplete = normalize_draw(
         lottery="power655",

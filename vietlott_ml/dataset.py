@@ -74,7 +74,6 @@ def _features_at(
     matrix: np.ndarray, t: int, last_seen: np.ndarray, cumulative: np.ndarray
 ) -> np.ndarray:
     """Đặc trưng của từng số tại thời điểm t (dùng lịch sử 0..t)."""
-    n_features = matrix.shape[1]
 
     def window_sum(size: int) -> np.ndarray:
         start = max(0, t - size + 1)
@@ -169,7 +168,13 @@ def split_by_target(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Chia train/test theo thời gian, trả về mask train và test."""
     unique_targets = np.unique(target_index)
-    cutoff = unique_targets[int(len(unique_targets) * train_ratio) - 1]
+    split_pos = int(len(unique_targets) * train_ratio) - 1
+    if not 0 <= split_pos < len(unique_targets):
+        raise ValueError(
+            f"Không đủ dữ liệu để chia train/test với ratio {train_ratio} "
+            f"({len(unique_targets)} kỳ đích)"
+        )
+    cutoff = unique_targets[split_pos]
     train_mask = target_index <= cutoff
     test_mask = target_index > cutoff
     return train_mask, test_mask

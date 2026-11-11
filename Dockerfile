@@ -25,4 +25,5 @@ RUN mkdir -p data/raw models reports scripts tests vietlott_ml/templates
 EXPOSE 8000
 
 # ---- Mặc định chạy web demo khi container start ---- #
-CMD ["python", "-m", "vietlott_ml.cli", "serve"]
+# Bind 0.0.0.0 để port mapping của Docker hoạt động.
+CMD ["python", "-m", "vietlott_ml.cli", "serve", "--host", "0.0.0.0", "--port", "8000"]
